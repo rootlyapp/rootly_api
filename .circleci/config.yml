@@ -1,0 +1,87 @@
+version: 2
+jobs:
+  build:
+    working_directory: ~/rootly
+    docker:
+      - image: circleci/node:8.11.2
+    steps:
+      - checkout
+      # - run:
+      #     name: installing sudo
+      #     command: "apt-get install -y sudo"
+      - run:
+          name: installing sftp dependencies
+          command: "sudo apt-get install -y lftp"
+
+      - run:
+          name: install global dependencies
+          command: sudo yarn global add typescript
+
+      # - run:
+      # name: create deploy folder
+      # command: mkdir ~/rootly
+      - restore_cache:
+          name: Restore Yarn Package Cache
+          keys:
+            - yarn-packages-{{ checksum "yarn.lock" }}
+
+      # create nestjs build into deploy folder
+      - run:
+          name: install rootly dependencies
+          command: cd ~/rootly/rootly-api && yarn install
+
+      - save_cache:
+          name: Save Yarn Package Cache
+          key: yarn-packages-{{ checksum "yarn.lock" }}
+          paths:
+            - ~/.cache/yarn
+
+      - run:
+          name: create a build into rootlytemp folder
+          command: cd ~/rootly/rootly-api && tsc -p tsconfig.build.json
+
+      # deploy script
+
+      - run:
+          name: moving source to dist
+          command: mv ~/rootly/deploy.sh ~/rootly/rootly-api/rootlytemp/deploy.sh
+
+      - run:
+          name: moving package.json to dist
+          command: mv ~/rootly/rootly-api/package.json ~/rootly/rootly-api/rootlytemp/package.json
+
+      - persist_to_workspace:
+          root: ~/rootly/rootly-api
+          paths:
+            - rootlytemp
+
+  deploy:
+    machine:
+      enabled: true
+    steps:
+      - add_ssh_keys:
+          fingerprints:
+            - "89:ea:55:fe:16:73:b6:a2:e5:48:49:36:09:55:86:a1"
+      - attach_workspace:
+          at: rootlytemp
+      - run:
+          name: deploy script to remote
+          command: scp -P 3022 -r rootlytemp $SFTP_USER@$SFTP_HOST:~/projects/
+      - run:
+          name: run deploy script
+          command: ssh $SFTP_USER@$SFTP_HOST -p 3022 "chmod +x ~/projects/rootlytemp/rootlytemp/deploy.sh; /bin/bash ~/projects/rootlytemp/rootlytemp/deploy.sh; sudo rm -rf ~/projects/rootlytemp"
+
+workflows:
+  version: 2
+  build-and-deploy:
+    jobs:
+      - build:
+          filters:
+            branches:
+              only: master
+      - deploy:
+          requires:
+            - build
+          filters:
+            branches:
+              only: master

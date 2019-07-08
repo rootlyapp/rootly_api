@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": ["node_modules", "test", "rootlytemp", "**/*spec.ts"],
+  "compilerOptions": {
+    "outDir": "./rootlytemp"
+  },
+}
